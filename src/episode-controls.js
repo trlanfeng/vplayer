@@ -3,6 +3,11 @@ export function createEpisodeControls({ sessionId, onSwitch, getPosition }) {
   let source, shownGroupId, busy = false, attempt = 0, pendingEpisodeId;
   const activeGroup = () => source?.catalog?.groups.find(g => g.id === source.catalog.currentGroupId);
   const activeEpisode = () => activeGroup()?.episodes.find(e => e.id === source.catalog.currentEpisodeId);
+  function nextEpisode() {
+    const group = activeGroup();
+    const index = group?.episodes.findIndex(e => e.id === source.catalog.currentEpisodeId) ?? -1;
+    return index < 0 ? undefined : group.episodes[index + 1];
+  }
   function status(message, error = false) {
     $('episode-status').textContent = message;
     $('episode-status').classList.toggle('error', error);
@@ -105,6 +110,14 @@ export function createEpisodeControls({ sessionId, onSwitch, getPosition }) {
     finally { render(); }
   });
   return {
+    isBusy: () => busy,
+    hasNext: () => Boolean(nextEpisode()),
+    async playNext() {
+      const episode = nextEpisode();
+      if (busy || !episode) return;
+      shownGroupId = activeGroup().id;
+      await switchTo(shownGroupId, episode);
+    },
     setSource(value) {
       source = value;
       shownGroupId = source?.catalog?.currentGroupId;

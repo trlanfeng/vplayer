@@ -9,6 +9,7 @@ await build({ entryPoints: ['src/background.js', 'src/popup.js', 'src/player.js'
 for (const file of ['manifest.json', 'popup.html', 'player.html', 'styles.css', 'episodes.css', 'fonts.css', 'INSTALL.md']) await copyFile(file, `dist/${file}`);
 await copyFile('node_modules/hls.js/dist/hls.worker.js', 'dist/vendor/hls.worker.js');
 await copyFile('node_modules/hls.js/LICENSE', 'dist/HLS-LICENSE.txt');
+await copyFile('node_modules/@videojs/html/LICENSE', 'dist/VIDEOJS-LICENSE.txt');
 const crc32 = data => {
   let crc = 0xffffffff;
   for (const byte of data) { crc ^= byte; for (let b = 0; b < 8; b++) crc = (crc >>> 1) ^ ((crc & 1) ? 0xedb88320 : 0); }

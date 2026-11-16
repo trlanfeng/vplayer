@@ -23,6 +23,7 @@ export function createFragmentLoader(scheduler) {
       scheduler.request(item, this.controller.signal).then(result => {
         if (this.stats.aborted) return;
         const now = performance.now();
+        this.stats.vplayerCached = result.cached;
         this.stats.loaded = this.stats.total = result.data.byteLength;
         this.stats.chunkCount = 1;
         this.stats.loading.first = this.stats.loading.start + Math.min(result.ttfb || 0, now - this.stats.loading.start);

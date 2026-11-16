@@ -163,7 +163,7 @@ chrome.tabs.onRemoved.addListener(tabId => {
     if (pending) pending.cancelled = true;
     if (id) await cancelEpisodeResolution(id);
     if (pending) await pending.finished;
-    await chrome.storage.session.remove([sourceKey(tabId), key, ...(id ? [`player:${id}`] : [])]);
+    await chrome.storage.session.remove([sourceKey(tabId), key, ...(id ? [`player:${id}`, `skip:${id}`] : [])]);
     await chrome.declarativeNetRequest.updateSessionRules({ removeRuleIds: [tabId + 1] });
   }).catch(() => {});
 });

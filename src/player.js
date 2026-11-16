@@ -1,9 +1,17 @@
 import Hls from 'hls.js';
+import '@videojs/html/i18n/locales/zh-CN/register';
+import '@videojs/html/i18n';
+import '@videojs/html/video/player';
+import '@videojs/html/video/skin';
+import '@videojs/html/media/hlsjs-video';
+import { selectQuality } from '@videojs/html';
 import { bytes, clock, fragmentDescriptor, segmentKey } from './common.js';
 import { SegmentCache } from './cache.js';
 import { SegmentScheduler } from './scheduler.js';
 import { createFragmentLoader } from './loader.js';
 import { createEpisodeControls } from './episode-controls.js';
+import { createSkipControls } from './skip-controls.js';
+import { createPreviewControls } from './preview-controls.js';
 
 const $ = id => document.getElementById(id);
 const video = $('video');
@@ -17,8 +25,10 @@ const episodeControls = createEpisodeControls({
   sessionId,
   getPosition: () => video.currentTime,
   async onSwitch(nextSource, startPosition) {
+    previewControls.reset();
     scheduler?.close();
-    hls?.destroy(); hls = undefined;
+    video.pause();
+    hls?.stopLoad();
     cache?.db?.close();
     source = nextSource;
     $('video-title').textContent = source.title || '网页视频';
@@ -31,6 +41,40 @@ const episodeControls = createEpisodeControls({
     await start(startPosition);
   },
 });
+const skipControls = createSkipControls({ video, sessionId, episodes: episodeControls, toast });
+const previewControls = createPreviewControls({ player: $('video-player'), skin: $('video-skin'), video, status: $('preview-status') });
+const seekButtons = [...document.querySelectorAll('#seek-controls media-seek-button')];
+
+// Video.js owns seek activation and VOD boundaries. Keep the loading/error gate
+// and sliding live-window restriction that the built-in time action lacks.
+function syncSeekButtons() {
+  const ready = !fatal && video.readyState >= 1;
+  const live = videoDetails?.live;
+  const ranges = video.seekable;
+  for (const button of seekButtons) {
+    button.disabled = !ready || (live && !ranges.length);
+  }
+}
+for (const button of seekButtons) button.addEventListener('click', event => {
+  if (!videoDetails?.live || !video.seekable.length) return;
+  const start = video.seekable.start(0), end = video.seekable.end(video.seekable.length - 1);
+  const target = video.currentTime + button.seconds;
+  if (target < start || target > end) {
+    event.stopImmediatePropagation();
+    video.currentTime = Math.max(start, Math.min(end, target));
+  }
+}, true);
+for (const event of ['loadedmetadata', 'durationchange', 'progress', 'emptied']) {
+  video.addEventListener(event, syncSeekButtons);
+}
+
+// Cached reads are not network throughput. Preserve real bandwidth estimates
+// when the user chooses Auto in Video.js's built-in quality menu.
+class CacheAwareAbrController extends Hls.DefaultConfig.abrController {
+  onFragBuffered(event, data) {
+    if (!(data.part?.stats || data.frag.stats).vplayerCached) super.onFragBuffered(event, data);
+  }
+}
 
 function state(text, error = false) {
   $('state').classList.toggle('error', error);
@@ -46,6 +90,8 @@ function toast(message) {
 
 function showError(message) {
   fatal = true;
+  previewControls.reset();
+  syncSeekButtons();
   state('连接遇到问题', true);
   $('error-message').textContent = message;
   $('error-panel').hidden = false;
@@ -173,29 +219,27 @@ function updateStats() {
   $('cache-summary').textContent = visible.length ? `${count} / ${visible.length} 个分片` : '等待播放列表';
 }
 
-function syncAudioOptions() {
-  const tracks = hls.audioTracks;
-  $('audio-field').hidden = tracks.length < 2;
-  $('audio').replaceChildren(...tracks.map((track, index) => new Option(track.name || track.lang || `音轨 ${index + 1}`, index)));
-  $('audio').value = String(hls.audioTrack);
-}
-
 async function start(startPosition = -1) {
+  previewControls.reset();
+  skipControls.reset(startPosition);
   fatal = false;
   $('error-panel').hidden = true;
   $('video-placeholder').hidden = false;
   $('placeholder-title').textContent = '正在连接视频源';
   $('placeholder-detail').textContent = '为接下来的播放，提前准备。';
   state('连接中');
-  hls?.destroy();
+  video.pause();
+  hls?.stopLoad();
   scheduler?.close();
   videoDetails = audioDetails = undefined;
   planned = []; hasPlayed = waiting = false;
   const headers = url => source.authorization && new URL(url).origin === new URL(source.url).origin ? { Authorization: source.authorization } : {};
   scheduler = new SegmentScheduler(cache, { concurrency: settings.concurrency, headers });
   if (!Hls.isSupported()) { showError('当前浏览器不支持此播放引擎，请使用较新版本的 Chrome 或 Edge。'); return; }
-  const instance = hls = new Hls({
+  const engineConfig = {
     autoStartLoad: false,
+    startPosition,
+    abrController: CacheAwareAbrController,
     enableWorker: true,
     workerPath: chrome.runtime.getURL('vendor/hls.worker.js'),
     fLoader: createFragmentLoader(scheduler),
@@ -208,34 +252,49 @@ async function start(startPosition = -1) {
       xhr.withCredentials = true;
       for (const [name, value] of Object.entries(headers(url))) xhr.setRequestHeader(name, value);
     },
-  });
+  };
+  // The adapter exposes its engine on loadstart, before loading the manifest.
+  // Let Video.js own attachment, media tracks and teardown across source changes.
+  previewControls.setSource(source.url, engineConfig, () => selectedLevel);
+  video.addEventListener('loadstart', bindEngine, { once: true });
+  video.source = {
+    src: source.url, type: 'application/vnd.apple.mpegurl', preferPlayback: 'mse',
+    capRenditionToPlayerSize: false,
+    engine: { hlsJs: engineConfig },
+  };
+}
+
+function bindEngine() {
+  const instance = hls = video.engine;
+  if (!instance) { showError('无法初始化 HLS 播放引擎，请重新连接。'); return; }
   let recoveries = 0;
-  instance.on(Hls.Events.MEDIA_ATTACHED, () => instance.loadSource(source.url));
   instance.on(Hls.Events.MANIFEST_PARSED, (_, data) => {
     // Fix the rendition explicitly: cache-hit latency is not a bandwidth estimate.
     const choices = data.levels.map((level, index) => ({ level, index }));
     const preferred = choices.filter(({ level }) => !level.height || level.height <= 720).sort((a, b) => b.level.bitrate - a.level.bitrate)[0] || choices[0];
     selectedLevel = preferred?.index || 0;
-    $('quality').replaceChildren(...choices.map(({ level, index }) => new Option(`${level.height ? `${level.height}p` : '原始画质'}${level.bitrate ? ` · ${(level.bitrate / 1e6).toFixed(1)} Mbps` : ''}`, index)));
-    $('quality').disabled = choices.length < 2;
-    $('quality').value = String(selectedLevel);
     instance.startLevel = selectedLevel;
-    instance.loadLevel = selectedLevel;
-    instance.startLoad(startPosition);
+    selectQuality($('video-player').store.state)?.selectVideoRendition(String(selectedLevel));
     state('正在缓冲');
-    syncAudioOptions();
     video.play().catch(() => { if (!fatal) toast('视频已准备，点击播放按钮开始观看。'); });
   });
   instance.on(Hls.Events.LEVEL_LOADED, (_, data) => {
     if (data.level !== selectedLevel) return;
     videoDetails = data.details;
+    syncSeekButtons();
+    skipControls.setLive(data.details.live);
     $('stream-type').textContent = data.details.live ? 'LIVE · 直播' : 'HLS · 点播';
     plan();
   });
   instance.on(Hls.Events.AUDIO_TRACK_LOADED, (_, data) => {
     if (data.id === instance.audioTrack) { audioDetails = data.details; plan(); }
   });
-  instance.on(Hls.Events.AUDIO_TRACKS_UPDATED, syncAudioOptions);
+  instance.on(Hls.Events.LEVEL_SWITCHING, (_, data) => {
+    if (selectedLevel === data.level) return;
+    selectedLevel = data.level;
+    videoDetails = instance.levels[data.level]?.details;
+    planned = []; scheduler.cancelPrefetch(); plan();
+  });
   instance.on(Hls.Events.AUDIO_TRACK_SWITCHING, () => { audioDetails = undefined; scheduler.cancelPrefetch(); });
   instance.on(Hls.Events.ERROR, (_, data) => {
     if (!data.fatal) return;
@@ -249,10 +308,10 @@ async function start(startPosition = -1) {
     else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) message = '浏览器无法解码这个视频，请尝试其他画质或视频源。';
     showError(message);
   });
-  instance.attachMedia(video);
 }
 
 async function init() {
+  await skipControls.init();
   document.querySelector('.speed-bars').replaceChildren(...speeds.map(() => document.createElement('i')));
   const stored = (await chrome.storage.local.get('settings')).settings;
   if (stored) {
@@ -282,15 +341,6 @@ document.querySelectorAll('#concurrency-options button').forEach(button => butto
 }));
 $('ahead').addEventListener('change', () => { settings.ahead = Number($('ahead').value); aheadText(); saveSettings(); plan(); });
 $('prefetch').addEventListener('change', () => { settings.prefetch = $('prefetch').checked; saveSettings(); plan(); });
-$('quality').addEventListener('change', () => {
-  if (!hls) return;
-  selectedLevel = Number($('quality').value);
-  videoDetails = undefined; planned = [];
-  scheduler.cancelPrefetch();
-  hls.currentLevel = selectedLevel;
-  toast('正在切换画质，重新准备后续分片。');
-});
-$('audio').addEventListener('change', () => { if (hls) hls.audioTrack = Number($('audio').value); });
 $('retry').addEventListener('click', async () => {
   if (!source || !cache || retrying) return;
   retrying = true;
@@ -320,6 +370,6 @@ video.addEventListener('pause', () => { if (!fatal) state('已暂停'); });
 video.addEventListener('ended', () => { if (!fatal) state('播放完成'); scheduler?.cancelPrefetch(); });
 video.addEventListener('seeking', () => { waiting = false; scheduler?.cancelPrefetch(); plan(); });
 video.addEventListener('seeked', () => { if (!fatal) state(video.paused ? '已暂停' : '流畅播放中'); });
-window.addEventListener('pagehide', () => { scheduler?.close(); hls?.destroy(); });
+window.addEventListener('pagehide', () => { previewControls.destroy(); scheduler?.close(); $('video-player').remove(); });
 setInterval(() => { if (!video.ended) plan(); updateStats(); }, 1000);
 init().catch(error => showError(error.message));

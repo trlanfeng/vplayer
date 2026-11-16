@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "VPlayer · 流畅播放",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "发现网页 HLS 视频，通过并发预加载与本地缓存减少播放等待。",
   "minimum_chrome_version": "120",
   "permissions": [

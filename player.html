@@ -6,10 +6,36 @@
   <main class="workspace">
     <section class="video-column">
       <div class="video-heading"><div><span class="eyebrow">YOUR PRIVATE SCREEN</span><h1 id="video-title">每一帧，都从容。</h1></div><span class="format-badge" id="stream-type">HLS</span></div>
-      <div class="video-stage">
-        <video id="video" controls playsinline preload="auto"></video>
-        <div id="video-placeholder" class="video-placeholder"><span class="large-play">▶</span><strong id="placeholder-title">正在连接视频源</strong><span id="placeholder-detail">为接下来的播放，提前准备。</span></div>
-      </div>
+      <media-i18n lang="zh-CN">
+        <video-player id="video-player">
+          <div class="video-stage">
+            <video-skin id="video-skin">
+              <hlsjs-video id="video" playsinline preload="none" crossorigin="use-credentials"></hlsjs-video>
+            </video-skin>
+            <div id="video-placeholder" class="video-placeholder"><span class="large-play">▶</span><strong id="placeholder-title">正在连接视频源</strong><span id="placeholder-detail">为接下来的播放，提前准备。</span></div>
+          </div>
+          <div class="playback-toolbar" aria-label="播放快捷操作">
+            <div id="seek-controls" class="seek-controls" role="group" aria-label="快退与快进">
+              <media-seek-button class="episode-nav-button" seconds="-600" label="后退10分钟" title="后退10分钟" disabled>−10分</media-seek-button>
+              <media-seek-button class="episode-nav-button" seconds="-60" label="后退1分钟" title="后退1分钟" disabled>−1分</media-seek-button>
+              <media-seek-button class="episode-nav-button" seconds="-25" label="后退25秒" title="后退25秒" disabled>−25秒</media-seek-button>
+              <media-seek-button class="episode-nav-button" seconds="-15" label="后退15秒" title="后退15秒" disabled>−15秒</media-seek-button>
+              <media-seek-button class="episode-nav-button" seconds="15" label="前进15秒" title="前进15秒" disabled>+15秒</media-seek-button>
+              <media-seek-button class="episode-nav-button" seconds="25" label="前进25秒" title="前进25秒" disabled>+25秒</media-seek-button>
+              <media-seek-button class="episode-nav-button" seconds="60" label="前进1分钟" title="前进1分钟" disabled>+1分</media-seek-button>
+              <media-seek-button class="episode-nav-button" seconds="600" label="前进10分钟" title="前进10分钟" disabled>+10分</media-seek-button>
+            </div>
+            <div class="skip-actions" role="group" aria-label="跳过片头片尾">
+              <button id="mark-intro" class="episode-nav-button" aria-label="标记片头" title="在片头结束处点击，后续剧集自动跳过片头" disabled>片头</button>
+              <button id="mark-outro" class="episode-nav-button" aria-label="标记片尾" title="在片尾开始处点击，自动跳过片尾并播放下一集" disabled>片尾</button>
+              <label class="episode-nav-button skip-toggle" title="自动跳过已标记的片头片尾，并连播下一集"><input id="auto-skip" type="checkbox" aria-label="自动跳过并连播" checked><span aria-hidden="true">自动</span></label>
+              <button id="clear-skip" class="episode-nav-button clear-skip-button" aria-label="清除片头片尾标记" title="清除片头片尾标记" disabled>清除</button>
+            </div>
+          </div>
+          <p id="skip-status" class="visually-hidden" role="status">片头未标记 · 片尾未标记</p>
+          <p id="preview-status" class="preview-status" role="status">悬停进度条可预览画面</p>
+        </video-player>
+      </media-i18n>
       <div id="error-panel" class="error-panel" hidden><div><strong>暂时无法播放</strong><p id="error-message"></p></div><button id="retry" class="secondary-button">重新连接</button></div>
       <div class="source-line"><span class="status-dot"></span><span id="source-host">正在读取视频源…</span><button id="copy-url" class="text-button">复制地址 ↗</button></div>
       <section id="episodes-panel" class="episodes-panel" aria-label="选集与换源">
@@ -34,8 +60,7 @@
         <div id="concurrency-options" class="segmented" role="group" aria-label="并发下载数"><button data-value="1" aria-pressed="false">1</button><button data-value="2" aria-pressed="false">2</button><button data-value="4" aria-pressed="true" class="selected">4</button><button data-value="6" aria-pressed="false">6</button><button data-value="8" aria-pressed="false">8</button></div>
         <p class="field-hint">先试 4 路。更多并发不一定更快。</p>
         <label class="field-label" for="ahead">提前缓存</label><select id="ahead"><option value="30">30 秒 · 节省流量</option><option value="120" selected>2 分钟 · 均衡</option><option value="300">5 分钟 · 应对波动</option></select>
-        <label class="field-label" for="quality">画质</label><select id="quality" disabled><option>等待视频信息</option></select>
-        <div id="audio-field" hidden><label class="field-label" for="audio">音轨</label><select id="audio"></select></div>
+        <p class="field-hint">画质、音轨与倍速可在视频内的「设置」菜单调整。</p>
         <div class="toggle-row"><div><strong>预加载后续分片</strong><span>暂停播放时也继续准备</span></div><input id="prefetch" type="checkbox" role="switch" aria-label="预加载后续分片" checked></div>
       </section>
       <section class="control-card storage-card"><div class="section-heading"><h2>本地缓存</h2><span id="cache-mode" class="small-muted">磁盘</span></div><div class="storage-amount"><strong id="cache-size">0 MB</strong><span> / 512 MB</span></div><progress id="storage-progress" max="536870912" value="0" aria-label="本地缓存占用"></progress><div class="storage-meta"><span id="downloaded">已接收 0 B</span><button id="clear-cache" class="text-button">清除</button></div><p class="field-hint">当前视频最多缓存 512 MB。旧缓存 24 小时后在下次打开播放器时清理。</p></section>

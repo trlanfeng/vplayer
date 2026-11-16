@@ -101,7 +101,7 @@ try {
     const nextPage = context.waitForEvent('page');
     await popup.locator('.source-card').first().click();
     const player = await nextPage;
-    await player.waitForFunction(() => document.querySelector('video')?.currentTime > 1, null, { timeout: 20000 });
+    await player.waitForFunction(() => document.querySelector('#video')?.currentTime > 1, null, { timeout: 20000 });
     await player.bringToFront();
     return { web, player, tabId };
   }
@@ -109,10 +109,18 @@ try {
   assert.equal(await player.locator('#episode-list button').count(), 4);
   assert.equal(await player.locator('#episode-source option').count(), 2);
   assert.equal(await player.locator('#episode-list .current').textContent(), '第01集');
+  const timeline = await player.locator('media-time-slider').boundingBox();
+  await player.mouse.move(timeline.x + timeline.width * 0.4, timeline.y + timeline.height / 2);
+  await player.waitForFunction(() => {
+    const img = document.querySelector('#video-skin').shadowRoot.querySelector('media-slider-thumbnail img');
+    return img?.complete && img.naturalWidth > 0 && img.src.startsWith('blob:');
+  }, null, { timeout: 20000 });
   await player.locator('#episode-list button').filter({ hasText: '第02集' }).click();
   await player.waitForFunction(() => document.querySelector('#episode-status').textContent.includes('正在播放 主线路 · 第02集'));
-  await player.waitForFunction(() => document.querySelector('video').currentTime > 1);
+  await player.waitForFunction(() => document.querySelector('#video').currentTime > 1);
   assert.equal(await player.locator('#error-panel').isVisible(), false);
+  assert.equal(await player.locator('media-slider-thumbnail').getAttribute('data-hidden'), '', 'new episode clears the previous preview track');
+
   assert.ok(requests.some(p => p.startsWith('/hls/1/2/segment')));
   assert.equal(web.url(), `${base}/vodplay/demo-1-1.html`);
   const tabState = await player.evaluate(() => chrome.tabs.query({ active: true, currentWindow: true }));
@@ -125,13 +133,13 @@ try {
   assert.equal(await player.locator('#episode-list button').count(), 2);
   await player.locator('#episode-list button').filter({ hasText: '第03集' }).click();
   await player.waitForFunction(() => document.querySelector('#episode-status').textContent.includes('正在播放 备用线路 · 第03集'));
-  await player.waitForFunction(() => document.querySelector('video').currentTime > 3);
+  await player.waitForFunction(() => document.querySelector('#video').currentTime > 3);
   assert.ok(requests.some(p => p.startsWith('/hls/2/2/segment')), 'episode label 3 maps to actual link index 2');
-  const position = await player.locator('video').evaluate(video => video.currentTime);
+  const position = await player.locator('#video').evaluate(video => video.currentTime);
   const source1 = await player.locator('#episode-source option').filter({ hasText: '主线路' }).getAttribute('value');
   await player.locator('#episode-source').selectOption(source1);
   await player.waitForFunction(() => document.querySelector('#episode-status').textContent.includes('正在播放 主线路 · 第03集'));
-  await player.waitForFunction(position => document.querySelector('video').currentTime >= position, position);
+  await player.waitForFunction(position => document.querySelector('#video').currentTime >= position, position);
   assert.equal(await player.locator('#error-panel').isVisible(), false);
   results.push('Source changes preserve the same episode and playback position; missing episodes require an explicit choice.');
 
@@ -146,7 +154,7 @@ try {
   await player.locator('#refresh-episodes').click();
   await player.waitForFunction(() => document.querySelector('#episode-status').textContent.includes('列表已更新'));
   assert.equal(await player.locator('#episode-list .current').textContent(), '第02集');
-  await player.locator('video').evaluate(video => video.pause());
+  await player.locator('#video').evaluate(video => video.pause());
   await player.screenshot({ path: join(root, 'player-episodes-desktop.png'), fullPage: true });
   await player.setViewportSize({ width: 680, height: 1000 });
   await player.waitForTimeout(200);
@@ -161,10 +169,63 @@ try {
   const alternate = await py.player.locator('#episode-source option').filter({ hasText: '西瓜线路' }).getAttribute('value');
   await py.player.locator('#episode-source').selectOption(alternate);
   await py.player.waitForFunction(() => document.querySelector('#episode-status').textContent.includes('正在播放 西瓜线路 · 第2集'));
-  await py.player.waitForFunction(() => document.querySelector('video').currentTime > 1);
+  await py.player.waitForFunction(() => document.querySelector('#video').currentTime > 1);
   assert.ok(requests.some(p => p.startsWith('/hls/routeB/2/segment')));
   assert.equal(await py.player.locator('#error-panel').isVisible(), false);
   results.push('教父-style numeric episode links and native source dropdowns switch sources and reload the correct episode.');
+
+  // Use real media seeks and the actual controls to exercise persisted markers.
+  async function seekPaused(page, position) {
+    await page.locator('#video').evaluate((video, position) => { video.pause(); video.currentTime = position; }, position);
+    await page.waitForFunction(position => {
+      const video = document.querySelector('#video');
+      return !video.seeking && Math.abs(video.currentTime - position) < 0.2;
+    }, position);
+  }
+  await seekPaused(py.player, 6);
+  await py.player.locator('#mark-intro').click();
+  assert.match(await py.player.locator('#skip-status').textContent(), /片头跳至 00:06/);
+  const duration = await py.player.locator('#video').evaluate(video => video.duration);
+  await seekPaused(py.player, duration - 12);
+  await py.player.locator('#mark-outro').click();
+  await py.player.waitForFunction(() => document.querySelector('#episode-status').textContent.includes('正在播放 西瓜线路 · 第3集'));
+  await py.player.waitForFunction(() => {
+    const video = document.querySelector('#video');
+    return !video.paused && video.currentTime >= 6 && video.currentTime < 20;
+  });
+  assert.match(await py.player.locator('#skip-status').textContent(), /片尾跳过最后 00:12/);
+  await py.player.reload();
+  await py.player.waitForFunction(() => document.querySelector('#video').currentTime >= 6);
+  assert.match(await py.player.locator('#skip-status').textContent(), /片头跳至 00:06.*片尾跳过最后 00:12/);
+  await seekPaused(py.player, 2);
+  assert.equal(await py.player.locator('#video').evaluate(video => video.currentTime), 2);
+  await seekPaused(py.player, duration - 13);
+  await py.player.locator('#video').evaluate(video => video.play());
+  await py.player.waitForFunction(() => {
+    const video = document.querySelector('#video');
+    // MSE may refine the total duration by a few milliseconds as it appends audio.
+    return video.paused && Math.abs(video.currentTime - (video.duration - 12)) < 0.5;
+  });
+  assert.equal(await py.player.locator('#episode-list .current').textContent(), '第3集');
+  assert.equal(await py.player.locator('#cancel-episode').isVisible(), false);
+  results.push('Intro/outro markers persist across episodes and reloads; autoplay skips the next intro and stops at the final outro without looping.');
+
+  await py.player.locator('#auto-skip').uncheck();
+  await seekPaused(py.player, duration - 0.5);
+  await py.player.locator('#video').evaluate(video => video.play());
+  await py.player.waitForFunction(() => document.querySelector('#video').ended);
+  assert.equal(await py.player.locator('#cancel-episode').isVisible(), false);
+  await py.player.locator('#clear-skip').click();
+  assert.match(await py.player.locator('#skip-status').textContent(), /片头未标记 · 片尾未标记/);
+  await py.player.locator('#previous-episode').click();
+  await py.player.waitForFunction(() => document.querySelector('#episode-status').textContent.includes('正在播放 西瓜线路 · 第2集'));
+  await py.player.waitForFunction(() => document.querySelector('#video').currentTime > 0);
+  await py.player.locator('#auto-skip').check();
+  await seekPaused(py.player, duration - 0.5);
+  await py.player.locator('#video').evaluate(video => video.play());
+  await py.player.waitForFunction(() => document.querySelector('#episode-status').textContent.includes('正在播放 西瓜线路 · 第3集'));
+  await py.player.waitForFunction(() => document.querySelector('#video').currentTime > 0 && !document.querySelector('#video').paused);
+  results.push('The toggle disables skipping/autoplay; clearing markers restores full playback, and natural playback completion still advances to the next episode.');
 
   // Reproduce an old background's stored session: pageUrl exists but sourceTabId
   // and catalog were never sent. The new player must recover the real source tab.
