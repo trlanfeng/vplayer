@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>VPlayer · 播放器</title><link rel="stylesheet" href="styles.css"></head>
+<body class="player-page">
+  <header class="topbar"><a class="brand" href="popup.html" title="打开视频列表"><span class="brand-icon">▶</span><span>VPlayer<span class="brand-dot">.</span></span></a><div class="topbar-right"><span class="local-note">缓存留在本机</span><span id="state" class="state-pill"><i></i><span>准备就绪</span></span></div></header>
+  <main class="workspace">
+    <section class="video-column">
+      <div class="video-heading"><div><span class="eyebrow">YOUR PRIVATE SCREEN</span><h1 id="video-title">每一帧，都从容。</h1></div><span class="format-badge" id="stream-type">HLS</span></div>
+      <div class="video-stage">
+        <video id="video" controls playsinline preload="auto"></video>
+        <div id="video-placeholder" class="video-placeholder"><span class="large-play">▶</span><strong id="placeholder-title">正在连接视频源</strong><span id="placeholder-detail">为接下来的播放，提前准备。</span></div>
+      </div>
+      <div id="error-panel" class="error-panel" hidden><div><strong>暂时无法播放</strong><p id="error-message"></p></div><button id="retry" class="secondary-button">重新连接</button></div>
+      <div class="source-line"><span class="status-dot"></span><span id="source-host">正在读取视频源…</span><button id="copy-url" class="text-button">复制地址 ↗</button></div>
+      <section id="episodes-panel" class="episodes-panel" aria-label="选集与换源">
+        <div class="section-heading"><div><span class="eyebrow">KEEP WATCHING</span><h2>选集与换源 <span id="episode-count" class="small-muted"></span></h2></div><button id="refresh-episodes" class="text-button">刷新列表</button></div>
+        <div id="episode-controls" hidden><div class="episode-toolbar"><label for="episode-source">播放线路</label><select id="episode-source" aria-label="播放线路"></select><div class="episode-navigation"><button id="previous-episode" class="episode-nav-button" aria-label="上一集">← 上一集</button><button id="next-episode" class="episode-nav-button" aria-label="下一集">下一集 →</button></div></div><div id="episode-list" class="episode-list" role="group" aria-label="剧集列表"></div></div>
+        <div class="episode-feedback"><p id="episode-status" role="status">从原网页打开视频后，可在这里选集、切换线路。</p><button id="cancel-episode" class="text-button" hidden>取消切换</button><a id="episode-page" class="text-button" target="_blank" rel="noopener noreferrer" hidden>查看原网页 ↗</a></div>
+      </section>
+      <section class="buffer-panel">
+        <div class="section-heading"><div><span class="eyebrow">LOOK AHEAD</span><h2>让下一段，提前到达</h2></div><span id="ahead-label" class="small-muted">预加载窗口 · 2 分钟</span></div>
+        <div id="segment-map" class="segment-map" aria-label="当前预加载窗口的分片下载状态"></div>
+        <div class="buffer-legend"><span><i class="legend-ready"></i>已缓存</span><span><i class="legend-loading"></i>下载中</span><span><i class="legend-waiting"></i>待下载</span><span id="cache-summary" class="legend-summary">等待播放列表</span></div>
+      </section>
+      <p class="playback-note">并发预加载帮助缓解网络波动。实际效果取决于视频源速度；直播仅能预加载已经产生的分片。</p>
+    </section>
+    <aside class="control-column">
+      <section class="control-card">
+        <div class="section-heading"><h2>播放引擎</h2><span class="tiny-badge">本地运行</span></div>
+        <div class="speed-display"><span id="speed">0<span>KB/s</span></span><p>近 5 秒平均下载速度</p><div class="speed-bars" aria-hidden="true"></div></div>
+        <div class="metric-grid"><div><span>可播放缓冲</span><strong id="buffered">0<small>秒</small></strong></div><div><span>连续本地缓存</span><strong id="cached-ahead">0<small>秒</small></strong></div></div>
+        <div class="divider"></div>
+        <label class="field-label" for="concurrency">并发下载<span id="active-count">0 / 4</span></label>
+        <div id="concurrency-options" class="segmented" role="group" aria-label="并发下载数"><button data-value="1" aria-pressed="false">1</button><button data-value="2" aria-pressed="false">2</button><button data-value="4" aria-pressed="true" class="selected">4</button><button data-value="6" aria-pressed="false">6</button><button data-value="8" aria-pressed="false">8</button></div>
+        <p class="field-hint">先试 4 路。更多并发不一定更快。</p>
+        <label class="field-label" for="ahead">提前缓存</label><select id="ahead"><option value="30">30 秒 · 节省流量</option><option value="120" selected>2 分钟 · 均衡</option><option value="300">5 分钟 · 应对波动</option></select>
+        <label class="field-label" for="quality">画质</label><select id="quality" disabled><option>等待视频信息</option></select>
+        <div id="audio-field" hidden><label class="field-label" for="audio">音轨</label><select id="audio"></select></div>
+        <div class="toggle-row"><div><strong>预加载后续分片</strong><span>暂停播放时也继续准备</span></div><input id="prefetch" type="checkbox" role="switch" aria-label="预加载后续分片" checked></div>
+      </section>
+      <section class="control-card storage-card"><div class="section-heading"><h2>本地缓存</h2><span id="cache-mode" class="small-muted">磁盘</span></div><div class="storage-amount"><strong id="cache-size">0 MB</strong><span> / 512 MB</span></div><progress id="storage-progress" max="536870912" value="0" aria-label="本地缓存占用"></progress><div class="storage-meta"><span id="downloaded">已接收 0 B</span><button id="clear-cache" class="text-button">清除</button></div><p class="field-hint">当前视频最多缓存 512 MB。旧缓存 24 小时后在下次打开播放器时清理。</p></section>
+      <div class="session-stats"><span>缓存命中 <b id="cache-hits">0</b></span><span>播放等待 <b id="stalls">0</b> 次</span></div>
+    </aside>
+  </main>
+  <footer class="page-footer"><span>VPLAYER <span class="brand-dot">/</span> 把等待，留在播放之前。</span><span>并发预加载 · 分片缓存 · 自由播放</span></footer>
+  <div id="toast" class="toast" role="status" hidden></div>
+  <script src="player.js" type="module"></script>
+</body></html>

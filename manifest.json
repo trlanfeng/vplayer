@@ -1,0 +1,34 @@
+{
+  "manifest_version": 3,
+  "name": "VPlayer · 流畅播放",
+  "version": "0.2.1",
+  "description": "发现网页 HLS 视频，通过并发预加载与本地缓存减少播放等待。",
+  "minimum_chrome_version": "120",
+  "permissions": [
+    "webRequest",
+    "storage",
+    "activeTab",
+    "scripting",
+    "declarativeNetRequestWithHostAccess"
+  ],
+  "host_permissions": [
+    "http://*/*",
+    "https://*/*"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "用 VPlayer 播放"
+  },
+  "icons": {
+    "16": "icons/16.png",
+    "48": "icons/48.png",
+    "128": "icons/128.png"
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'; worker-src 'self'; connect-src http: https:; media-src 'self' blob: http: https:"
+  }
+}

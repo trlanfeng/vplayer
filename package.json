@@ -1,0 +1,22 @@
+{
+  "name": "vplayer-extension",
+  "version": "0.2.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "test": "node --test tests/*.test.js",
+    "test:e2e": "node tests/browser.mjs && node tests/episodes-browser.mjs",
+    "check": "npm test && npm run build && npm run test:e2e"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "hls.js": "^1.7.4"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2",
+    "playwright": "^1.65.1"
+  }
+}
